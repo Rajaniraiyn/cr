@@ -95,15 +95,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore source cache
+      # lookup-only=true: only check existence, never download the 10+ GB tree.
+      # Downstream jobs that actually need the files do a full restore themselves.
+      - name: Check source cache
         id: src-cache
         uses: actions/cache@v4
         with:
           path: chromium
           key: chromium-src-${{ env.CR_VERSION }}-v1
           restore-keys: chromium-src-${{ env.CR_VERSION }}-
+          lookup-only: true
 
-      # Only need depot_tools + heavy disk ops on a cache miss
+      # Everything below is skipped entirely on a cache hit — job takes ~5 s.
       - name: Free disk space
         if: steps.src-cache.outputs.cache-hit != 'true'
         run: bash scripts/free_disk.sh
@@ -134,6 +137,7 @@ jobs:
         run: bash scripts/prune_source.sh "$GITHUB_WORKSPACE/chromium/src"
 
       - name: Disk usage
+        if: steps.src-cache.outputs.cache-hit != 'true'
         run: df -h /
 
   # ── 3: Patch & configure (Linux x64) ──────────────────────────────────────

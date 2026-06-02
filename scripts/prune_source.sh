@@ -34,10 +34,10 @@ remove third_party/cros_system_api
 # Large media test vectors
 remove media/test/data
 
-# Internal tooling
-remove tools/perf
-remove tools/memory
-remove tools/traffic_annotation
+# tools/ dirs are referenced by root BUILD.gn — cannot delete them.
+# Only remove heavy test data inside them.
+remove tools/perf/testdata
+remove tools/memory/testdata
 
 # Unnecessary codecs (we set proprietary_codecs=false)
 remove third_party/openh264
