@@ -102,9 +102,8 @@ jobs:
         if: >
           steps.src-cache.outputs.cache-hit != 'true' &&
           github.event.inputs.skip_fetch != 'true'
-        env:
-          PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
         run: |
+          export PATH="$GITHUB_WORKSPACE/depot_tools:$PATH"
           bash scripts/fetch_chromium.sh \
             "$CR_VERSION" \
             "$GITHUB_WORKSPACE/depot_tools" \
@@ -169,19 +168,18 @@ jobs:
       - name: Configure GN (linux-x64)
         if: steps.build-cache.outputs.cache-hit != 'true'
         env:
-          PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
           CR_TARGET_OS: linux
           CR_OUT_DIR: Linux
         run: |
+          export PATH="$GITHUB_WORKSPACE/depot_tools:$PATH"
           bash scripts/setup_build.sh \
             "$GITHUB_WORKSPACE/chromium/src" \
             "$GITHUB_WORKSPACE/depot_tools"
 
       - name: Show final GN args
         if: steps.build-cache.outputs.cache-hit != 'true'
-        env:
-          PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
         run: |
+          export PATH="$GITHUB_WORKSPACE/depot_tools:$PATH"
           gn args chromium/src/out/Linux --list --short 2>/dev/null | head -50 || true
 
   # ── 4: Compile ───────────────────────────────────────────────────────────────
@@ -232,9 +230,9 @@ jobs:
 
       - name: Compile cr_api
         env:
-          PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
           CCACHE_DIR: /home/runner/.ccache
         run: |
+          export PATH="$GITHUB_WORKSPACE/depot_tools:$PATH"
           cd chromium/src
           export CC="ccache clang"
           export CXX="ccache clang++"
