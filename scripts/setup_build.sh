@@ -33,7 +33,9 @@ EOF
 
 # ── Run gclient hooks ────────────────────────────────────────────────────────
 echo "=== Running gclient hooks ==="
-(cd "$(dirname "$SRC")" && gclient runhooks)
+python3 -m pip install --quiet --break-system-packages httplib2 colorama \
+  || python3 -m pip install --quiet httplib2 colorama
+(cd "$(dirname "$SRC")" && python3 "$DEPOT_TOOLS/gclient.py" runhooks)
 
 # ── Build GN args string ─────────────────────────────────────────────────────
 BASE_ARGS="$(grep -v '^\s*#' "$REPO_ROOT/gn_args/minimal.gni" \
