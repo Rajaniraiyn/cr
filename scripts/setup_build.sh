@@ -24,7 +24,7 @@ fi
 echo "=== Installing cr_api sources (target=$TARGET_OS) ==="
 mkdir -p "$SRC/cr_api/src" "$SRC/cr_api/include"
 
-cp -r "$REPO_ROOT/src/."   "$SRC/cr_api/src/"
+cp -r "$REPO_ROOT/src/."    "$SRC/cr_api/src/"
 cp -r "$REPO_ROOT/include/." "$SRC/cr_api/include/"
 
 cat > "$SRC/cr_api/BUILD.gn" <<'EOF'
@@ -37,24 +37,43 @@ python3 -m pip install --quiet --break-system-packages httplib2 colorama \
   || python3 -m pip install --quiet httplib2 colorama
 (cd "$(dirname "$SRC")" && python3 "$DEPOT_TOOLS/gclient.py" runhooks)
 
+# ── Locate gn ────────────────────────────────────────────────────────────────
+# Prefer the gn binary downloaded by gclient sync into src/buildtools/.
+# This avoids the depot_tools gn wrapper which requires python3_bin_reldir.txt
+# (a file only created when depot_tools is initialised as a git repo).
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64)  GN_BIN="$SRC/buildtools/linux64/gn" ;;
+  Linux-aarch64) GN_BIN="$SRC/buildtools/linux64/gn" ;;  # same binary, arm runner
+  Darwin-arm64)  GN_BIN="$SRC/buildtools/mac_arm64/gn" ;;
+  Darwin-x86_64) GN_BIN="$SRC/buildtools/mac/gn" ;;
+  *)             GN_BIN="gn" ;;  # fallback to PATH
+esac
+
+if [ ! -x "$GN_BIN" ]; then
+  echo "WARN: $GN_BIN not found, falling back to PATH gn"
+  GN_BIN="gn"
+fi
+echo "Using gn: $GN_BIN"
+
 # ── Build GN args string ─────────────────────────────────────────────────────
 BASE_ARGS="$(grep -v '^\s*#' "$REPO_ROOT/gn_args/minimal.gni" \
              | grep -v '^\s*$' \
              | tr '\n' ' ')"
 
-# Per-platform overrides
+# Per-platform overrides — note: use_ozone=true already in minimal.gni for linux,
+# so do NOT add use_x11=true here (conflicts with ozone headless mode).
 case "$TARGET_OS" in
   win)
-    PLATFORM_ARGS='target_os="win" target_cpu="x64" is_clang=true use_lld=true'
-    # On Linux hosts building for Windows we must disable some Linux-only deps
-    PLATFORM_ARGS="$PLATFORM_ARGS use_cups=false use_udev=false use_gtk=false use_x11=false use_ozone=false"
+    PLATFORM_ARGS='target_os="win" target_cpu="x64"'
+    PLATFORM_ARGS="$PLATFORM_ARGS use_ozone=false use_gtk=false"
     ;;
   mac)
     PLATFORM_ARGS='target_os="mac" target_cpu="x64"'
-    PLATFORM_ARGS="$PLATFORM_ARGS use_cups=false use_gtk=false use_x11=false"
+    PLATFORM_ARGS="$PLATFORM_ARGS use_ozone=false use_gtk=false"
     ;;
   linux|*)
-    PLATFORM_ARGS='target_os="linux" target_cpu="x64" use_x11=true use_gtk=true'
+    # use_ozone=true + ozone_platform_headless=true already in minimal.gni
+    PLATFORM_ARGS='target_os="linux" target_cpu="x64"'
     ;;
 esac
 
@@ -69,13 +88,12 @@ GN_ARGS="$BASE_ARGS $PLATFORM_ARGS $CCACHE_ARG"
 
 # ── gn gen ───────────────────────────────────────────────────────────────────
 echo "=== gn gen: $OUT ==="
-echo "    args: $GN_ARGS"
 mkdir -p "$OUT"
 
-gn gen "$OUT" \
+"$GN_BIN" gen "$OUT" \
   --root="$SRC" \
   --args="$GN_ARGS" \
   --export-compile-commands
 
 echo "=== GN configured ==="
-gn args "$OUT" --list --short 2>/dev/null | head -30 || true
+"$GN_BIN" args "$OUT" --list --short 2>/dev/null | head -40 || true

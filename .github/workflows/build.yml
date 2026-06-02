@@ -180,8 +180,9 @@ jobs:
       - name: Show final GN args
         if: steps.build-cache.outputs.cache-hit != 'true'
         run: |
-          export PATH="$GITHUB_WORKSPACE/depot_tools:$PATH"
-          gn args chromium/src/out/Linux --list --short 2>/dev/null | head -50 || true
+          GN="chromium/src/buildtools/linux64/gn"
+          [ -x "$GN" ] || GN="gn"
+          "$GN" args chromium/src/out/Linux --list --short 2>/dev/null | head -50 || true
 
   # ── 4: Compile ───────────────────────────────────────────────────────────────
   compile:
@@ -239,8 +240,12 @@ jobs:
           export CC="ccache clang"
           export CXX="ccache clang++"
 
+          # Use Chromium's bundled ninja if available (avoids PATH/version issues)
+          NINJA="../../depot_tools/ninja"
+          [ -x "$NINJA" ] || NINJA="ninja"
+
           # -j2 = 2 cores, -l2 = cap load avg — respects free runner limits
-          ninja -C out/Linux -j2 -l2 //cr_api/src:cr_api
+          "$NINJA" -C out/Linux -j2 -l2 //cr_api/src:cr_api
 
           echo "=== Artifacts ==="
           ls -lh out/Linux/libcr_api* 2>/dev/null || \
