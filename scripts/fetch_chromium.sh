@@ -9,16 +9,13 @@ DEPOT_TOOLS="${2:?depot_tools dir required}"
 OUT_DIR="${3:?output dir required}"
 
 export PATH="$DEPOT_TOOLS:$PATH"
-# Allow depot_tools to bootstrap its Python virtualenv (cipd + httplib2 etc.)
-# on first use. Once bootstrapped we freeze further network updates.
-export DEPOT_TOOLS_UPDATE=1
+# depot_tools is deployed as a flat artifact (not a git clone) so its own
+# self-update/bootstrap mechanism won't run.  Install the Python deps it
+# needs directly.  DEPOT_TOOLS_UPDATE=0 suppresses the "not a git repo" error.
+export DEPOT_TOOLS_UPDATE=0
 export PYTHONDONTWRITEBYTECODE=1
 
-# Bootstrap depot_tools' managed Python environment before any gclient call.
-# This installs httplib2 and other deps into depot_tools' own virtualenv.
-if [ -f "$DEPOT_TOOLS/ensure_bootstrap" ]; then
-  "$DEPOT_TOOLS/ensure_bootstrap"
-fi
+python3 -m pip install --quiet httplib2 colorama
 
 mkdir -p "$OUT_DIR"
 cd "$OUT_DIR"
