@@ -1,5 +1,6 @@
 # Minimal GN args for a lean headless-only Chromium shared library.
-# Target: ~2GB disk, ~4GB RAM peak, ~3h on 2-core runner.
+# Verified against Chromium 136.x (May 2025).
+# Target: minimum disk, RAM, and compile time on a 2-core runner.
 
 # ── Compiler & linker ───────────────────────────────────────────────────────
 is_clang                     = true
@@ -8,22 +9,36 @@ use_lld                      = true
 use_gold                     = false
 clang_use_chrome_plugins     = false
 
-# ── Symbols — zero for minimum size/RAM ─────────────────────────────────────
+# ── Symbols — zero for minimum size and RAM ──────────────────────────────────
 symbol_level                 = 0
 blink_symbol_level           = 0
 v8_symbol_level              = 0
 exclude_unwind_tables        = true
 enable_iterator_debugging    = false
 
-# ── Component build avoids 6 GB monolithic link step ────────────────────────
+# ── Component build avoids the ~6 GB monolithic link step ────────────────────
 is_component_build           = true
 
-# ── Strip Chrome-specific warnings-as-errors (our code isn't Chrome) ────────
+# ── No warnings-as-errors — our shim sits outside Chromium's style rules ─────
 treat_warnings_as_errors     = false
-fatal_linker_errors          = false
 
-# ── Disable every optional feature we don't need ────────────────────────────
-enable_nacl                  = false
+# ── Ozone (replaces use_x11 / use_wayland in Chromium 136) ──────────────────
+# Runtime platform is selected via --ozone-platform=headless
+use_ozone                    = true
+ozone_platform_headless      = true
+ozone_platform_x11           = false
+ozone_platform_wayland       = false
+ozone_auto_platforms         = false
+
+# ── Disable features we don't need ───────────────────────────────────────────
+# NaCl: fully removed from Chromium 136 — do NOT set enable_nacl
+use_cups                     = false
+use_kerberos                 = false
+use_pulseaudio               = false
+use_libpci                   = false
+use_gnome_keyring            = false
+use_udev                     = false
+rtc_include_tests            = false
 enable_extensions            = false
 enable_plugins               = false
 enable_pdf                   = false
@@ -32,23 +47,30 @@ enable_reading_list          = false
 enable_supervised_users      = false
 enable_remoting              = false
 enable_widevine              = false
-use_cups                     = false
-use_kerberos                 = false
-use_pulseaudio               = false
-use_libpci                   = false
-use_gnome_keyring            = false
-rtc_include_tests            = false
 
-# ── No PGO / LTO — they need too much RAM and time ──────────────────────────
+# ── No PGO or LTO — both need too much RAM and time on free runners ───────────
 chrome_pgo_phase             = 0
 use_thin_lto                 = false
 
-# ── Media: keep minimal (no proprietary codecs) ─────────────────────────────
+# ── Rust — disable to skip the Rust toolchain fetch (~500 MB) ────────────────
+# Re-enable once we have Rust-based components in cr_api.
+enable_rust                  = false
+
+# ── Perfetto tracing — off for minimal builds ─────────────────────────────────
+enable_perfetto              = false
+
+# ── Media ────────────────────────────────────────────────────────────────────
 proprietary_codecs           = false
 ffmpeg_branding              = "Chromium"
 
-# ── Headless — our entire target surface ────────────────────────────────────
+# ── PartitionAlloc — keep on (default true, best security/perf trade-off) ─────
+use_partition_alloc_as_malloc = true
+
+# ── V8 sandbox — keep on for 64-bit (default, catches memory corruption) ──────
+# v8_enable_sandbox = true   ← default on x64, leave unset
+
+# ── Headless ─────────────────────────────────────────────────────────────────
 headless_use_embedded_resources = false
 
-# ── Branding ────────────────────────────────────────────────────────────────
+# ── Branding ─────────────────────────────────────────────────────────────────
 use_unofficial_version_number = false

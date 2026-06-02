@@ -33,14 +33,16 @@ solutions = [
       "src/third_party/catapult"                       : None,
     },
     "custom_vars" : {
-      "checkout_android"        : False,
+      "checkout_android"                : False,
       "checkout_android_native_support" : False,
-      "checkout_ios"            : False,
-      "checkout_nacl"           : False,
-      "checkout_oculus_sdk"     : False,
-      "checkout_openxr"         : False,
-      "checkout_pgo_profiles"   : False,
-      "checkout_src_internal"   : False,
+      "checkout_ios"                    : False,
+      # checkout_nacl removed in Chromium 136 — NaCl is fully gone
+      "checkout_oculus_sdk"             : False,
+      "checkout_openxr"                 : False,
+      "checkout_pgo_profiles"           : False,
+      "checkout_src_internal"           : False,
+      "checkout_rust"                   : False,  # skip Rust toolchain (~500 MB)
+      "checkout_reclient"               : False,  # remote execution client
     },
   },
 ]
