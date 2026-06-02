@@ -1,0 +1,184 @@
+name: cr — Auto Release
+
+# Runs after a successful build on main, bumps the patch version,
+# tags the commit, and publishes a GitHub Release with the artifact.
+on:
+  workflow_run:
+    workflows: ["cr — Chromium C API Build Dispatcher"]
+    types: [completed]
+    branches: [main]
+
+  # Also allow a manual release with an explicit bump type.
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version segment to bump'
+        required: false
+        default: 'patch'
+        type: choice
+        options: [patch, minor, major]
+      run_id:
+        description: 'build.yml run ID to pull artifact from (leave blank = latest)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: "Tag & Release"
+    # Skip if the triggering build failed.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # need full tag history for version bump
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Compute next version ────────────────────────────────────────────
+      - name: Compute next semver tag
+        id: version
+        run: |
+          # Find latest vMAJOR.MINOR.PATCH tag; default to v0.0.0 if none.
+          LATEST=$(git tag --list 'v*.*.*' \
+                     | sort -V \
+                     | tail -1)
+          LATEST="${LATEST:-v0.0.0}"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+
+          # Strip leading 'v' and split
+          RAW="${LATEST#v}"
+          MAJOR="${RAW%%.*}"; REST="${RAW#*.}"
+          MINOR="${REST%%.*}"; PATCH="${REST#*.}"
+
+          BUMP="${{ github.event.inputs.bump || 'patch' }}"
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+
+          NEXT="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Next release: $LATEST → $NEXT (bump=$BUMP)"
+
+      # ── Download artifact from the triggering (or specified) build run ──
+      - name: Resolve build run ID
+        id: run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ github.event.inputs.run_id }}" ]; then
+            echo "id=${{ github.event.inputs.run_id }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.workflow_run.id }}" ]; then
+            echo "id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+          else
+            # Fall back to the most recent successful build run on main
+            RUN_ID=$(gh run list \
+              --workflow="build.yml" \
+              --branch=main \
+              --status=success \
+              --limit=1 \
+              --json=databaseId \
+              --jq '.[0].databaseId')
+            echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download build artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID="${{ steps.run.outputs.id }}"
+          echo "Downloading artifacts from run $RUN_ID"
+          gh run download "$RUN_ID" --dir dist/ || {
+            echo "No artifact found — skipping asset upload"
+            mkdir -p dist/
+            touch dist/.no-artifact
+          }
+          ls -R dist/
+
+      # ── Tag the commit ───────────────────────────────────────────────────
+      - name: Create and push tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEXT="${{ steps.version.outputs.next }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEXT" -m "Release $NEXT"
+          git push origin "$NEXT"
+
+      # ── Build release notes ──────────────────────────────────────────────
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST="${{ steps.version.outputs.latest }}"
+          NEXT="${{ steps.version.outputs.next }}"
+          CR_VERSION=$(cat gn_args/minimal.gni \
+                       | grep -v '#' | head -1 \
+                       || echo "124.x")
+
+          # Collect commits since last tag
+          if git rev-parse "$LATEST" &>/dev/null; then
+            COMMITS=$(git log "${LATEST}..HEAD" \
+                        --pretty=format:"- %s (%h)" \
+                        --no-merges \
+                      | head -30)
+          else
+            COMMITS="- Initial release"
+          fi
+
+          # Write notes to a temp file (avoids shell quoting issues)
+          cat > /tmp/release_notes.md <<EOF
+          ## cr $NEXT
+
+          Minimal Chromium C API library — headless-only, de-Googled via
+          ungoogled-chromium patches, compiled for Linux x64.
+
+          ### Changes since $LATEST
+          $COMMITS
+
+          ### C API (stable surface)
+          \`\`\`c
+          int            cr_init(int argc, char** argv);
+          cr_browser_t*  cr_browser_create(const cr_browser_config_t*);
+          cr_tab_t*      cr_tab_open(cr_browser_t*, const char* url);
+          void           cr_tab_navigate(cr_tab_t*, const char* url);
+          void           cr_run_loop(void);
+          const char*    cr_version(void);
+          \`\`\`
+
+          ### Linking
+          \`\`\`sh
+          gcc myapp.c -L./lib -lcr_api -Wl,-rpath,'\$ORIGIN/lib' -o myapp
+          \`\`\`
+
+          ### Checksums
+          $(cat dist/**/*.sha256 2>/dev/null || echo "_No checksum file found._")
+          EOF
+
+          echo "notes_file=/tmp/release_notes.md" >> "$GITHUB_OUTPUT"
+
+      # ── Publish GitHub Release ───────────────────────────────────────────
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEXT="${{ steps.version.outputs.next }}"
+          NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
+
+          # Collect any .tar.gz / .sha256 files from the downloaded artifact
+          ASSETS=$(find dist/ -type f \
+                    \( -name '*.tar.gz' -o -name '*.sha256' \) \
+                    2>/dev/null | tr '\n' ' ')
+
+          gh release create "$NEXT" \
+            --title "cr $NEXT" \
+            --notes-file "$NOTES_FILE" \
+            $ASSETS

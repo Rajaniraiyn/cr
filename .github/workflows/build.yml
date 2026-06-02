@@ -282,27 +282,17 @@ jobs:
           path: |
             cr-${{ env.CR_VERSION }}-linux-x64.tar.gz
             cr-${{ env.CR_VERSION }}-linux-x64.tar.gz.sha256
+          # Kept 30 days; release.yml downloads it and publishes to GitHub Releases.
           retention-days: 30
 
-      - name: Create GitHub Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            cr-${{ env.CR_VERSION }}-linux-x64.tar.gz
-            cr-${{ env.CR_VERSION }}-linux-x64.tar.gz.sha256
-          body: |
-            ## cr ${{ env.CR_VERSION }}
-
-            Minimal Chromium C API library — headless-only, de-Googled via
-            ungoogled-chromium patches, compiled for Linux x64.
-
-            ### Linking
-            ```
-            gcc -o myapp myapp.c -L./lib -lcr_api -Wl,-rpath,'$ORIGIN/lib'
-            ```
-
-            ### API surface (v0.1)
-            See `include/cr_browser.h` for the full C API.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build summary
+        run: |
+          echo "### Build complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Chromium | \`$CR_VERSION\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Artifact | \`cr-$CR_VERSION-linux-x64.tar.gz\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "release.yml will tag and publish a GitHub Release automatically." \
+            >> "$GITHUB_STEP_SUMMARY"
