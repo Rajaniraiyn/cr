@@ -1,0 +1,54 @@
+# Minimal GN args for a lean headless-only Chromium shared library.
+# Target: ~2GB disk, ~4GB RAM peak, ~3h on 2-core runner.
+
+# ── Compiler & linker ───────────────────────────────────────────────────────
+is_clang                     = true
+is_debug                     = false
+use_lld                      = true
+use_gold                     = false
+clang_use_chrome_plugins     = false
+
+# ── Symbols — zero for minimum size/RAM ─────────────────────────────────────
+symbol_level                 = 0
+blink_symbol_level           = 0
+v8_symbol_level              = 0
+exclude_unwind_tables        = true
+enable_iterator_debugging    = false
+
+# ── Component build avoids 6 GB monolithic link step ────────────────────────
+is_component_build           = true
+
+# ── Strip Chrome-specific warnings-as-errors (our code isn't Chrome) ────────
+treat_warnings_as_errors     = false
+fatal_linker_errors          = false
+
+# ── Disable every optional feature we don't need ────────────────────────────
+enable_nacl                  = false
+enable_extensions            = false
+enable_plugins               = false
+enable_pdf                   = false
+enable_print_preview         = false
+enable_reading_list          = false
+enable_supervised_users      = false
+enable_remoting              = false
+enable_widevine              = false
+use_cups                     = false
+use_kerberos                 = false
+use_pulseaudio               = false
+use_libpci                   = false
+use_gnome_keyring            = false
+rtc_include_tests            = false
+
+# ── No PGO / LTO — they need too much RAM and time ──────────────────────────
+chrome_pgo_phase             = 0
+use_thin_lto                 = false
+
+# ── Media: keep minimal (no proprietary codecs) ─────────────────────────────
+proprietary_codecs           = false
+ffmpeg_branding              = "Chromium"
+
+# ── Headless — our entire target surface ────────────────────────────────────
+headless_use_embedded_resources = false
+
+# ── Branding ────────────────────────────────────────────────────────────────
+use_unofficial_version_number = false

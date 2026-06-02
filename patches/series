@@ -1,0 +1,6 @@
+# Patch series — applied after ungoogled-chromium patches.
+# Format: relative path from patches/ dir, one per line.
+# Lines starting with # are comments.
+
+# Registers //cr_api in the root build so `gn gen` includes it.
+cr/0001-add-cr-api-to-root-build.patch

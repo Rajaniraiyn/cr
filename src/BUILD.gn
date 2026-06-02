@@ -1,0 +1,33 @@
+# BUILD.gn for the cr_api shared library.
+# Placed at //cr_api/src/BUILD.gn inside the Chromium tree by setup_build.sh.
+
+import("//build/config/features.gni")
+
+shared_library("cr_api") {
+  output_name = "cr_api"
+
+  sources = [
+    "cr_api.cc",
+  ]
+
+  include_dirs = [
+    "..",           # exposes cr_api/include/
+    "//",
+  ]
+
+  deps = [
+    "//base",
+    "//base:base_static",
+    "//headless:headless_non_renderer",
+    "//headless/public",
+    "//url",
+  ]
+
+  defines = [ "CR_API_IMPLEMENTATION" ]
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
+
+  cflags = [ "-fvisibility=hidden" ]
+  cflags_cc = [ "-std=c++17" ]
+}

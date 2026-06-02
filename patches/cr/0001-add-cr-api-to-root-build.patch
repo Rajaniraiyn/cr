@@ -1,0 +1,14 @@
+Add cr_api to Chromium root BUILD.gn so the target is discoverable
+without modifying any Chromium-owned file except the root build entry.
+
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -1,4 +1,9 @@
+ # Copyright (c) 2024 The Chromium Authors. All rights reserved.
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
++
++# cr_api — thin C ABI wrapper over the headless content layer.
++group("cr_api_group") {
++  deps = [ "//cr_api/src:cr_api" ]
++}
