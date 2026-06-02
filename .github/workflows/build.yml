@@ -28,7 +28,6 @@ concurrency:
 
 env:
   CR_VERSION: ${{ github.event.inputs.chromium_version || '136.0.7103.114' }}
-  DEPOT_TOOLS_UPDATE: '0'
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Platform roadmap

@@ -9,8 +9,16 @@ DEPOT_TOOLS="${2:?depot_tools dir required}"
 OUT_DIR="${3:?output dir required}"
 
 export PATH="$DEPOT_TOOLS:$PATH"
-export DEPOT_TOOLS_UPDATE=0
+# Allow depot_tools to bootstrap its Python virtualenv (cipd + httplib2 etc.)
+# on first use. Once bootstrapped we freeze further network updates.
+export DEPOT_TOOLS_UPDATE=1
 export PYTHONDONTWRITEBYTECODE=1
+
+# Bootstrap depot_tools' managed Python environment before any gclient call.
+# This installs httplib2 and other deps into depot_tools' own virtualenv.
+if [ -f "$DEPOT_TOOLS/ensure_bootstrap" ]; then
+  "$DEPOT_TOOLS/ensure_bootstrap"
+fi
 
 mkdir -p "$OUT_DIR"
 cd "$OUT_DIR"
