@@ -88,18 +88,19 @@ jobs:
             echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Download build artifact
+      - name: Download all platform artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RUN_ID="${{ steps.run.outputs.id }}"
           echo "Downloading artifacts from run $RUN_ID"
-          gh run download "$RUN_ID" --dir dist/ || {
-            echo "No artifact found — skipping asset upload"
-            mkdir -p dist/
-            touch dist/.no-artifact
-          }
-          ls -R dist/
+          for platform in linux windows macos; do
+            gh run download "$RUN_ID" \
+              --name "cr-${platform}-x64-${{ env.CR_VERSION }}" \
+              --dir "dist/${platform}" 2>/dev/null \
+              || echo "WARN: no artifact for $platform"
+          done
+          find dist/ -type f | sort || true
 
       # ── Tag the commit ───────────────────────────────────────────────────
       - name: Create and push tag
@@ -173,9 +174,9 @@ jobs:
           NEXT="${{ steps.version.outputs.next }}"
           NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
 
-          # Collect any .tar.gz / .sha256 files from the downloaded artifact
+          # Collect all platform archives + checksums
           ASSETS=$(find dist/ -type f \
-                    \( -name '*.tar.gz' -o -name '*.sha256' \) \
+                    \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.sha256' \) \
                     2>/dev/null | tr '\n' ' ')
 
           gh release create "$NEXT" \

@@ -1,6 +1,6 @@
 name: cr — Chromium C API Build Dispatcher
 
-# ── Triggers ────────────────────────────────────────────────────────────────
+# ── Triggers ──────────────────────────────────────────────────────────────────
 on:
   workflow_dispatch:
     inputs:
@@ -9,9 +9,10 @@ on:
         required: false
         default: '124.0.6367.155'
       skip_fetch:
-        description: 'Skip source fetch if cached (true/false)'
+        description: 'Skip source fetch if already cached'
         required: false
         default: 'false'
+        type: boolean
   push:
     branches: [main]
     paths:
@@ -21,7 +22,6 @@ on:
       - 'gn_args/**'
       - '.github/workflows/**'
 
-# Only one build at a time; cancel outdated queued runs.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -29,17 +29,24 @@ concurrency:
 env:
   CR_VERSION: ${{ github.event.inputs.chromium_version || '124.0.6367.155' }}
   DEPOT_TOOLS_UPDATE: '0'
-  PYTHONDONTWRITEBYTECODE: '1'
-  # Chromium's own clang (fetched by hooks) — keep consistent
-  LLVM_DOWNLOAD_GOLD_PLUGIN: '0'
 
-# ── Job 1: depot_tools ──────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Platform strategy
+# ─────────────────────────────────────────────────────────────────────────────
+#  linux   → native  libcr_api.so      (ubuntu-latest, free)
+#  windows → cross   cr_api.dll        (ubuntu-latest cross-compiling via
+#                                        clang-cl + lld-link; no Windows runner
+#                                        minutes consumed)
+#  macos   → native  libcr_api.dylib   (macos-13 runner; costs 10× minutes so
+#                                        only compile step runs here — source
+#                                        fetch/configure is shared via artifact)
+# ─────────────────────────────────────────────────────────────────────────────
+
 jobs:
+  # ── Job 1: depot_tools (Linux only, shared) ──────────────────────────────
   depot-tools:
     name: "1 · depot_tools"
     runs-on: ubuntu-latest
-    outputs:
-      cache-hit: ${{ steps.cache.outputs.cache-hit }}
     steps:
       - name: Free disk space
         run: |
@@ -47,7 +54,6 @@ jobs:
             /usr/local/share/boost /usr/lib/jvm /usr/share/swift \
             /opt/hostedtoolcache/CodeQL /usr/local/go /usr/lib/llvm-*
           sudo docker system prune -af 2>/dev/null || true
-          df -h /
 
       - name: Cache depot_tools
         id: cache
@@ -62,16 +68,15 @@ jobs:
           git clone --depth=1 \
             https://chromium.googlesource.com/chromium/tools/depot_tools.git
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: depot-tools
           path: depot_tools
           retention-days: 1
 
-  # ── Job 2: Fetch & prune source ──────────────────────────────────────────
+  # ── Job 2: Fetch & prune Chromium source ──────────────────────────────────
   fetch-source:
-    name: "2 · Fetch Chromium source"
+    name: "2 · Fetch source"
     needs: depot-tools
     runs-on: ubuntu-latest
     steps:
@@ -80,17 +85,13 @@ jobs:
       - name: Free disk space
         run: bash scripts/free_disk.sh
 
-      - name: Download depot_tools artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: depot-tools
           path: depot_tools
 
-      - name: Mark depot_tools executable
-        run: chmod -R +x depot_tools/
+      - run: chmod -R +x depot_tools/
 
-      # Cache the entire chromium/src keyed by version.
-      # If the cache exists the fetch step is skipped — saves ~30 min.
       - name: Restore source cache
         id: src-cache
         uses: actions/cache@v4
@@ -111,54 +112,43 @@ jobs:
             "$GITHUB_WORKSPACE/depot_tools" \
             "$GITHUB_WORKSPACE/chromium"
 
-      - name: Prune unneeded source directories
+      - name: Prune unneeded directories
         if: steps.src-cache.outputs.cache-hit != 'true'
         run: bash scripts/prune_source.sh "$GITHUB_WORKSPACE/chromium/src"
 
-      - name: Disk usage after fetch+prune
-        run: df -h /
+      - run: df -h /
 
-  # ── Job 3: Apply patches + configure GN ──────────────────────────────────
-  configure:
-    name: "3 · Patch & configure"
+  # ── Job 3a: Configure for Linux native ───────────────────────────────────
+  configure-linux:
+    name: "3 · Configure (linux)"
     needs: fetch-source
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Free disk space
         run: bash scripts/free_disk.sh
+      - uses: actions/download-artifact@v4
+        with: { name: depot-tools, path: depot_tools }
+      - run: chmod -R +x depot_tools/
 
-      - name: Download depot_tools artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: depot-tools
-          path: depot_tools
-
-      - name: Mark depot_tools executable
-        run: chmod -R +x depot_tools/
-
-      - name: Restore source cache
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: chromium
           key: chromium-src-${{ env.CR_VERSION }}-v1
 
-      - name: Cache configured build dir
+      - name: Cache Linux build dir
         id: build-cache
         uses: actions/cache@v4
         with:
-          path: chromium/src/out/Minimal
-          key: >-
-            chromium-build-${{ env.CR_VERSION }}-
-            ${{ hashFiles('gn_args/**','src/**','patches/**') }}-v1
+          path: chromium/src/out/Linux
+          key: chromium-linux-${{ env.CR_VERSION }}-${{ hashFiles('gn_args/**','src/**','patches/**') }}-v1
 
-      - name: Install build dependencies
+      - name: Install Linux build deps
         if: steps.build-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential clang lld ninja-build python3 python3-pip \
+            build-essential clang lld ninja-build python3 \
             libglib2.0-dev libgtk-3-dev libx11-dev libxcomposite-dev \
             libxdamage-dev libxrandr-dev libxss-dev libxtst-dev \
             libpci-dev libnss3-dev libdbus-1-dev libatk1.0-dev \
@@ -171,128 +161,326 @@ jobs:
           UNGOOGLED_VERSION: '${{ env.CR_VERSION }}-1'
         run: bash scripts/apply_patches.sh "$GITHUB_WORKSPACE/chromium/src"
 
-      - name: Configure GN
+      - name: Configure GN (linux)
         if: steps.build-cache.outputs.cache-hit != 'true'
         env:
           PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
+          CR_TARGET_OS: linux
+          CR_OUT_DIR: Linux
         run: |
           bash scripts/setup_build.sh \
             "$GITHUB_WORKSPACE/chromium/src" \
             "$GITHUB_WORKSPACE/depot_tools"
 
-  # ── Job 4: Compile ────────────────────────────────────────────────────────
-  compile:
-    name: "4 · Compile cr_api"
-    needs: configure
+  # ── Job 3b: Configure for Windows cross-compile ───────────────────────────
+  configure-windows:
+    name: "3 · Configure (windows cross)"
+    needs: fetch-source
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Free disk space
         run: bash scripts/free_disk.sh
+      - uses: actions/download-artifact@v4
+        with: { name: depot-tools, path: depot_tools }
+      - run: chmod -R +x depot_tools/
 
-      - name: Download depot_tools artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/cache@v4
         with:
-          name: depot-tools
-          path: depot_tools
+          path: chromium
+          key: chromium-src-${{ env.CR_VERSION }}-v1
 
-      - name: Mark depot_tools executable
-        run: chmod -R +x depot_tools/
+      - name: Cache Windows cross build dir
+        id: build-cache
+        uses: actions/cache@v4
+        with:
+          path: chromium/src/out/Windows
+          key: chromium-windows-${{ env.CR_VERSION }}-${{ hashFiles('gn_args/**','src/**','patches/**') }}-v1
 
-      - name: Restore source cache
+      - name: Install cross-compile deps
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            clang lld ninja-build python3 \
+            # Chromium fetches its own clang-cl — we only need the host toolchain
+            binutils
+
+      - name: Fetch Windows SDK sysroot
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        env:
+          PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
+        run: |
+          # Chromium's toolchain scripts download the Windows SDK headers
+          # and a Wine-free clang-cl for cross-compilation automatically.
+          cd chromium/src
+          python3 build/vs_toolchain.py update --force
+
+      - name: Apply patches
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        env:
+          UNGOOGLED_VERSION: '${{ env.CR_VERSION }}-1'
+        run: bash scripts/apply_patches.sh "$GITHUB_WORKSPACE/chromium/src"
+
+      - name: Configure GN (windows cross)
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        env:
+          PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
+          CR_TARGET_OS: win
+          CR_OUT_DIR: Windows
+        run: |
+          bash scripts/setup_build.sh \
+            "$GITHUB_WORKSPACE/chromium/src" \
+            "$GITHUB_WORKSPACE/depot_tools"
+
+  # ── Job 3c: Configure for macOS (on real macOS runner) ───────────────────
+  configure-macos:
+    name: "3 · Configure (macos)"
+    needs: fetch-source
+    runs-on: macos-13        # cheapest macOS runner (10× minutes)
+    steps:
+      - uses: actions/checkout@v4
+
+      # macOS runners only have ~14 GB disk — still tight but workable.
+      - name: Free disk space (macOS)
+        run: |
+          sudo rm -rf /Applications/Xcode_14* /Applications/Xcode_15* || true
+          # Keep only the Xcode we need; remove simulators
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/ || true
+          df -h /
+
+      - uses: actions/download-artifact@v4
+        with: { name: depot-tools, path: depot_tools }
+      - run: chmod -R +x depot_tools/
+
+      # Re-fetch source on macOS (GitHub cache is per-OS).
+      - name: Restore macOS source cache
+        id: src-cache
+        uses: actions/cache@v4
+        with:
+          path: chromium
+          key: chromium-src-macos-${{ env.CR_VERSION }}-v1
+          restore-keys: chromium-src-macos-${{ env.CR_VERSION }}-
+
+      - name: Fetch source (macOS)
+        if: steps.src-cache.outputs.cache-hit != 'true'
+        env:
+          PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
+        run: |
+          bash scripts/fetch_chromium.sh \
+            "$CR_VERSION" \
+            "$GITHUB_WORKSPACE/depot_tools" \
+            "$GITHUB_WORKSPACE/chromium"
+          bash scripts/prune_source.sh "$GITHUB_WORKSPACE/chromium/src"
+
+      - name: Cache macOS build dir
+        id: build-cache
+        uses: actions/cache@v4
+        with:
+          path: chromium/src/out/macOS
+          key: chromium-macos-${{ env.CR_VERSION }}-${{ hashFiles('gn_args/**','src/**','patches/**') }}-v1
+
+      - name: Install macOS build deps
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        run: |
+          brew install ninja python@3.11 || true
+
+      - name: Apply patches (macOS)
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        env:
+          UNGOOGLED_VERSION: '${{ env.CR_VERSION }}-1'
+        run: bash scripts/apply_patches.sh "$GITHUB_WORKSPACE/chromium/src"
+
+      - name: Configure GN (macos)
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        env:
+          PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
+          CR_TARGET_OS: mac
+          CR_OUT_DIR: macOS
+        run: |
+          bash scripts/setup_build.sh \
+            "$GITHUB_WORKSPACE/chromium/src" \
+            "$GITHUB_WORKSPACE/depot_tools"
+
+  # ── Job 4: Compile — three parallel platform targets ─────────────────────
+  compile:
+    name: "4 · Compile (${{ matrix.name }})"
+    needs: [configure-linux, configure-windows, configure-macos]
+    strategy:
+      fail-fast: false          # let other platforms finish even if one fails
+      matrix:
+        include:
+          - name: linux
+            runner: ubuntu-latest
+            out_dir: Linux
+            artifact_glob: "libcr_api.so"
+            archive: "cr-linux-x64.tar.gz"
+            target_os: linux
+
+          - name: windows
+            runner: ubuntu-latest   # cross-compile — free Linux runner
+            out_dir: Windows
+            artifact_glob: "cr_api.dll"
+            archive: "cr-windows-x64.zip"
+            target_os: win
+
+          - name: macos
+            runner: macos-13
+            out_dir: macOS
+            artifact_glob: "libcr_api.dylib"
+            archive: "cr-macos-x64.tar.gz"
+            target_os: mac
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space (Linux/Windows)
+        if: matrix.runner == 'ubuntu-latest'
+        run: bash scripts/free_disk.sh
+
+      - name: Free disk space (macOS)
+        if: matrix.runner == 'macos-13'
+        run: |
+          sudo rm -rf /Applications/Xcode_14* || true
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/ || true
+
+      - uses: actions/download-artifact@v4
+        with: { name: depot-tools, path: depot_tools }
+      - run: chmod -R +x depot_tools/
+
+      # ── Restore the right source cache per OS ──────────────────────────
+      - name: Restore source (Linux/Windows)
+        if: matrix.runner == 'ubuntu-latest'
         uses: actions/cache@v4
         with:
           path: chromium
           key: chromium-src-${{ env.CR_VERSION }}-v1
 
-      - name: Restore build dir cache
+      - name: Restore source (macOS)
+        if: matrix.runner == 'macos-13'
         uses: actions/cache@v4
         with:
-          path: chromium/src/out/Minimal
-          key: >-
-            chromium-build-${{ env.CR_VERSION }}-
-            ${{ hashFiles('gn_args/**','src/**','patches/**') }}-v1
+          path: chromium
+          key: chromium-src-macos-${{ env.CR_VERSION }}-v1
 
-      - name: Install build dependencies
+      # ── Restore the configured build dir ───────────────────────────────
+      - name: Restore build dir
+        uses: actions/cache@v4
+        with:
+          path: chromium/src/out/${{ matrix.out_dir }}
+          key: chromium-${{ matrix.name }}-${{ env.CR_VERSION }}-${{ hashFiles('gn_args/**','src/**','patches/**') }}-v1
+
+      # ── Platform build deps ────────────────────────────────────────────
+      - name: Install Linux native deps
+        if: matrix.name == 'linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential clang lld ninja-build python3 \
+            clang lld ninja-build \
             libglib2.0-dev libgtk-3-dev libx11-dev libxcomposite-dev \
             libxdamage-dev libxrandr-dev libxss-dev libxtst-dev \
             libpci-dev libnss3-dev libdbus-1-dev libatk1.0-dev \
             libatk-bridge2.0-dev libcups2-dev libdrm-dev libgbm-dev \
             libxkbcommon-dev libasound2-dev libpulse-dev
 
-      # ccache dramatically speeds up repeated builds (cache hit = ~20 min).
+      - name: Install Windows cross-compile deps
+        if: matrix.name == 'windows'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            clang lld ninja-build python3 binutils
+
+      - name: Install macOS deps
+        if: matrix.name == 'macos'
+        run: brew install ninja python@3.11 || true
+
+      # ── ccache (all platforms) ─────────────────────────────────────────
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          max-size: 4G
-          key: ccache-cr-${{ env.CR_VERSION }}
-          restore-keys: ccache-cr-
+          max-size: 3G
+          key: ccache-${{ matrix.name }}-${{ env.CR_VERSION }}
+          restore-keys: ccache-${{ matrix.name }}-
 
-      - name: Compile (ninja -j2)
+      # ── Compile ────────────────────────────────────────────────────────
+      - name: Compile cr_api
         env:
           PATH: ${{ github.workspace }}/depot_tools:${{ env.PATH }}
-          CCACHE_DIR: /home/runner/.ccache
+          CCACHE_DIR: ${{ runner.os == 'macOS' && '/Users/runner/.ccache' || '/home/runner/.ccache' }}
         run: |
           cd chromium/src
+          export CC="ccache clang"
+          export CXX="ccache clang++"
 
-          # Inject ccache wrapper if available
-          if command -v ccache &>/dev/null; then
-            export CC="ccache clang"
-            export CXX="ccache clang++"
+          # Windows cross-compile uses clang-cl but ccache still wraps it
+          if [ "${{ matrix.target_os }}" = "win" ]; then
+            export CC="ccache clang-cl"
+            export CXX="ccache clang-cl"
           fi
 
-          # -j2 respects the 2-core free runner; -l2 caps load average
-          ninja -C out/Minimal -j2 -l2 //cr_api/src:cr_api
+          ninja -C out/${{ matrix.out_dir }} -j2 -l2 //cr_api/src:cr_api
 
-          echo "=== Build artifacts ==="
-          ls -lh out/Minimal/libcr_api* 2>/dev/null || \
-          ls -lh out/Minimal/*.so 2>/dev/null || true
-
+          echo "=== Artifacts ==="
+          ls -lh out/${{ matrix.out_dir }}/${{ matrix.artifact_glob }} 2>/dev/null || \
+          find out/${{ matrix.out_dir }} -maxdepth 1 -name 'libcr_api*' -o -name 'cr_api.*' | head -10
           df -h /
 
-      - name: Package distribution
+      # ── Package ────────────────────────────────────────────────────────
+      - name: Package (${{ matrix.name }})
         run: |
           mkdir -p dist/include dist/lib
 
           cp include/cr_browser.h dist/include/
           cp include/cr_types.h   dist/include/
 
-          # Collect built artifacts (component build produces many .so files;
-          # libcr_api.so is the only one consumers need to link against).
-          find chromium/src/out/Minimal -maxdepth 1 \
-            \( -name 'libcr_api.so' -o -name 'libcr_api.a' \) \
+          find chromium/src/out/${{ matrix.out_dir }} -maxdepth 1 \
+            \( -name 'libcr_api.so' \
+               -o -name 'libcr_api.dylib' \
+               -o -name 'cr_api.dll' \
+               -o -name 'cr_api.lib' \
+               -o -name 'libcr_api.a' \) \
             -exec cp {} dist/lib/ \;
 
-          # Also bundle the headless shell runner for testing
-          [ -f chromium/src/out/Minimal/headless_shell ] && \
-            cp chromium/src/out/Minimal/headless_shell dist/ || true
+          ARCHIVE="${{ matrix.archive }}"
+          if [[ "$ARCHIVE" == *.zip ]]; then
+            (cd dist && zip -r "../$ARCHIVE" .)
+          else
+            tar -czf "$ARCHIVE" dist/
+          fi
 
-          tar -czf "cr-$CR_VERSION-linux-x64.tar.gz" dist/
-          sha256sum "cr-$CR_VERSION-linux-x64.tar.gz" > "cr-$CR_VERSION-linux-x64.tar.gz.sha256"
+          if command -v sha256sum &>/dev/null; then
+            sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          else
+            shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+          fi
 
-      - name: Upload build artifact
+      - name: Upload artifact (${{ matrix.name }})
         uses: actions/upload-artifact@v4
         with:
-          name: cr-linux-x64-${{ env.CR_VERSION }}
+          name: cr-${{ matrix.name }}-x64-${{ env.CR_VERSION }}
           path: |
-            cr-${{ env.CR_VERSION }}-linux-x64.tar.gz
-            cr-${{ env.CR_VERSION }}-linux-x64.tar.gz.sha256
-          # Kept 30 days; release.yml downloads it and publishes to GitHub Releases.
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
           retention-days: 30
 
-      - name: Build summary
+  # ── Job 5: Build summary ──────────────────────────────────────────────────
+  summary:
+    name: "5 · Summary"
+    needs: compile
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Write job summary
         run: |
-          echo "### Build complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "## cr $CR_VERSION build results" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Chromium | \`$CR_VERSION\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Artifact | \`cr-$CR_VERSION-linux-x64.tar.gz\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Platform | Target | Notes |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Linux | \`libcr_api.so\` | native, ubuntu-latest |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Windows | \`cr_api.dll\` | cross-compiled on Linux via clang-cl |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| macOS | \`libcr_api.dylib\` | native, macos-13 |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "release.yml will tag and publish a GitHub Release automatically." \
             >> "$GITHUB_STEP_SUMMARY"
