@@ -40,6 +40,7 @@ use_kerberos                 = false
 use_pulseaudio               = false
 use_libpci                   = false
 use_udev                     = false
+use_bluez                    = false
 
 # ── No PGO or LTO — both need too much RAM and time on free runners ───────────
 chrome_pgo_phase             = 0

@@ -225,6 +225,10 @@ jobs:
     name: "4 · Compile cr_api (linux-x64)"
     needs: configure
     runs-on: ubuntu-latest
+    # Exit cleanly 20 min before GitHub's hard 6-hour kill so post steps
+    # (ccache save) always run.  Subsequent runs restore the ccache and pick
+    # up where the previous run left off — progressive warm-up strategy.
+    timeout-minutes: 340
     steps:
       - uses: actions/checkout@v4
 
@@ -247,7 +251,6 @@ jobs:
             ${{ hashFiles('gn_args/**','src/**','patches/**') }}-v1
 
       - name: Free disk space
-        if: steps.src-cache.outputs.cache-hit != 'true' || steps.build-cache.outputs.cache-hit != 'true'
         run: bash scripts/free_disk.sh
 
       - uses: actions/download-artifact@v4
@@ -271,9 +274,18 @@ jobs:
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          max-size: 4G
+          # 10 GB covers the full Chromium object file set.
+          # The action appends a timestamp to the save key, so each run creates
+          # a new entry; restore-keys picks the most-recent partial cache.
+          # This gives progressive warm-up: each run compiles less until the
+          # whole tree is cached and the run finally completes end-to-end.
+          max-size: 10G
           key: ccache-linux-${{ env.CR_VERSION }}
-          restore-keys: ccache-linux-
+          # Broad restore key: picks up any cache from any prior run, even
+          # across CR_VERSION bumps, maximising hit rate.
+          restore-keys: |
+            ccache-linux-${{ env.CR_VERSION }}
+            ccache-linux-
 
       - name: Install cr_api sources into Chromium tree
         run: |
