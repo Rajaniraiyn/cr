@@ -282,8 +282,26 @@ jobs:
           # Re-install before ninja so GN finds //cr_api/src/BUILD.gn when it
           # regenerates build.ninja.
           mkdir -p chromium/src/cr_api
-          cp -r src/    chromium/src/cr_api/
-          cp -r include/ chromium/src/cr_api/
+          cp -r src/      chromium/src/cr_api/
+          cp -r include/  chromium/src/cr_api/
+          cp -r gn_args/  chromium/src/cr_api/
+          # Recreate cr_api/BUILD.gn group so target is reachable from root
+          cat > chromium/src/cr_api/BUILD.gn <<'BUILDEOF'
+group("cr_api") {
+  public_deps = [ "//cr_api/src:cr_api" ]
+}
+BUILDEOF
+          # Re-inject root BUILD.gn hook (stripped from source cache)
+          if ! grep -q "cr_api_root_hook" chromium/src/BUILD.gn; then
+            cat >> chromium/src/BUILD.gn <<'HOOKEOF'
+
+# ── cr_api hook — injected by setup_build.sh ─────────────────────────────────
+# cr_api_root_hook
+group("cr_api_root_hook") {
+  deps = [ "//cr_api:cr_api" ]
+}
+HOOKEOF
+          fi
 
       - name: Regenerate LASTCHANGE files
         run: |

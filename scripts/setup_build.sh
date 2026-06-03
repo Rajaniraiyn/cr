@@ -22,14 +22,32 @@ fi
 
 # ── Copy our sources into the Chromium tree ──────────────────────────────────
 echo "=== Installing cr_api sources (target=$TARGET_OS) ==="
-mkdir -p "$SRC/cr_api/src" "$SRC/cr_api/include"
+mkdir -p "$SRC/cr_api/src" "$SRC/cr_api/include" "$SRC/cr_api/gn_args"
 
-cp -r "$REPO_ROOT/src/."    "$SRC/cr_api/src/"
-cp -r "$REPO_ROOT/include/." "$SRC/cr_api/include/"
+cp -r "$REPO_ROOT/src/."       "$SRC/cr_api/src/"
+cp -r "$REPO_ROOT/include/."   "$SRC/cr_api/include/"
+cp -r "$REPO_ROOT/gn_args/."   "$SRC/cr_api/gn_args/"
 
+# cr_api/BUILD.gn — a group so //cr_api/src:cr_api is reachable from root
 cat > "$SRC/cr_api/BUILD.gn" <<'EOF'
-import("//cr_api/src/BUILD.gn")
+group("cr_api") {
+  public_deps = [ "//cr_api/src:cr_api" ]
+}
 EOF
+
+# Hook our group into Chromium's root BUILD.gn so GN includes it in the graph.
+# GN only processes BUILD.gn files transitively reachable from root targets;
+# any file outside that graph is invisible even after gn gen.
+if ! grep -q "cr_api_root_hook" "$SRC/BUILD.gn"; then
+  cat >> "$SRC/BUILD.gn" <<'EOF'
+
+# ── cr_api hook — injected by setup_build.sh ─────────────────────────────────
+# cr_api_root_hook
+group("cr_api_root_hook") {
+  deps = [ "//cr_api:cr_api" ]
+}
+EOF
+fi
 
 # ── Run gclient hooks ────────────────────────────────────────────────────────
 echo "=== Running gclient hooks ==="
