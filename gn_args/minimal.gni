@@ -47,8 +47,8 @@ use_udev                     = false
 chrome_pgo_phase             = 0
 use_thin_lto                 = false
 
-# ── Rust — disable to skip the Rust toolchain fetch (~500 MB) ────────────────
-enable_rust                  = false
+# ── Rust — required in Chromium 136 (cargo_crate targets use rust_sysroot) ───
+enable_rust                  = true
 
 # ── Perfetto tracing — off (no assertions on this flag) ───────────────────────
 enable_perfetto              = false

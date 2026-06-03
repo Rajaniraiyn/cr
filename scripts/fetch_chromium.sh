@@ -52,7 +52,7 @@ solutions = [
       "checkout_openxr"                 : False,
       "checkout_pgo_profiles"           : False,
       "checkout_src_internal"           : False,
-      "checkout_rust"                   : False,
+      "checkout_rust"                   : True,
       "checkout_reclient"               : False,
     },
   },
