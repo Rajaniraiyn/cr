@@ -68,3 +68,7 @@ use_unofficial_version_number = false
 
 # ── RTC tests — safe to disable (no assert) ──────────────────────────────────
 rtc_include_tests            = false
+
+# ── Safe browsing — ungoogled-chromium patches reference this variable ────────
+# 0 = disabled; must be set or patched BUILD.gn emits "Undefined identifier"
+safe_browsing_mode           = 0
