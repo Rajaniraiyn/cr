@@ -11,7 +11,6 @@
 is_clang                     = true
 is_debug                     = false
 use_lld                      = true
-use_gold                     = false
 clang_use_chrome_plugins     = false
 
 # ── Symbols — zero for minimum size and RAM ──────────────────────────────────
