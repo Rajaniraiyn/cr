@@ -19,7 +19,6 @@ shared_library("cr_api") {
     "//base",
     "//base:base_static",
     "//headless:headless_non_renderer",
-    "//headless/public",
     "//url",
   ]
 
