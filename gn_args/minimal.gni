@@ -1,6 +1,11 @@
 # Minimal GN args for a lean headless-only Chromium shared library.
 # Verified against Chromium 136.x (May 2025).
-# Target: minimum disk, RAM, and compile time on a 2-core runner.
+#
+# IMPORTANT: Only set flags that are safe to override.
+# Chrome's root BUILD.gn includes test targets with assert(feature_flag) calls.
+# Disabling those features here causes 'gn gen' to abort even though we never
+# build those targets — GN parses all BUILD.gn files unconditionally.
+# Rule: only change flags that don't appear in assert() calls.
 
 # ── Compiler & linker ───────────────────────────────────────────────────────
 is_clang                     = true
@@ -23,54 +28,43 @@ is_component_build           = true
 treat_warnings_as_errors     = false
 
 # ── Ozone (replaces use_x11 / use_wayland in Chromium 136) ──────────────────
-# Runtime platform is selected via --ozone-platform=headless
+# Runtime platform selected via --ozone-platform=headless
 use_ozone                    = true
 ozone_platform_headless      = true
 ozone_platform_x11           = false
 ozone_platform_wayland       = false
 ozone_auto_platforms         = false
 
-# ── Disable features we don't need ───────────────────────────────────────────
-# NaCl: fully removed from Chromium 136 — do NOT set enable_nacl
+# ── Safe-to-disable system deps (no assertions, purely optional) ──────────────
 use_cups                     = false
 use_kerberos                 = false
 use_pulseaudio               = false
 use_libpci                   = false
 use_gnome_keyring            = false
 use_udev                     = false
-rtc_include_tests            = false
-enable_extensions            = false
-enable_plugins               = false
-enable_pdf                   = false
-enable_print_preview         = false
-enable_reading_list          = false
-enable_supervised_users      = false
-enable_remoting              = false
-enable_widevine              = false
 
 # ── No PGO or LTO — both need too much RAM and time on free runners ───────────
 chrome_pgo_phase             = 0
 use_thin_lto                 = false
 
 # ── Rust — disable to skip the Rust toolchain fetch (~500 MB) ────────────────
-# Re-enable once we have Rust-based components in cr_api.
 enable_rust                  = false
 
-# ── Perfetto tracing — off for minimal builds ─────────────────────────────────
+# ── Perfetto tracing — off (no assertions on this flag) ───────────────────────
 enable_perfetto              = false
 
 # ── Media ────────────────────────────────────────────────────────────────────
 proprietary_codecs           = false
 ffmpeg_branding              = "Chromium"
 
-# ── PartitionAlloc — keep on (default true, best security/perf trade-off) ─────
+# ── PartitionAlloc — keep on (default true) ────────────────────────────────
 use_partition_alloc_as_malloc = true
-
-# ── V8 sandbox — keep on for 64-bit (default, catches memory corruption) ──────
-# v8_enable_sandbox = true   ← default on x64, leave unset
 
 # ── Headless ─────────────────────────────────────────────────────────────────
 headless_use_embedded_resources = false
 
 # ── Branding ─────────────────────────────────────────────────────────────────
 use_unofficial_version_number = false
+
+# ── RTC tests — safe to disable (no assert) ──────────────────────────────────
+rtc_include_tests            = false
