@@ -307,7 +307,7 @@ jobs:
           NINJA="../../depot_tools/ninja"
           [ -x "$NINJA" ] || NINJA="ninja"
 
-          "$NINJA" -C out/Linux -j2 -l2 cr_api/src:cr_api
+          "$NINJA" -C out/Linux -j2 -l2 libcr_api.so
 
           echo "=== Artifacts ==="
           ls -lh out/Linux/libcr_api* 2>/dev/null || \

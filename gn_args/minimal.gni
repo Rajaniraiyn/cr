@@ -40,7 +40,6 @@ use_cups                     = false
 use_kerberos                 = false
 use_pulseaudio               = false
 use_libpci                   = false
-use_gnome_keyring            = false
 use_udev                     = false
 
 # ── No PGO or LTO — both need too much RAM and time on free runners ───────────
