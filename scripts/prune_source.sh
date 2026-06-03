@@ -22,7 +22,7 @@ remove chrome/test/data
 remove content/test/data
 remove net/data/ssl/certificates
 remove third_party/hunspell_dictionaries
-remove third_party/catapult
+# third_party/catapult is referenced by root BUILD.gn — cannot remove
 
 # Android / iOS / ChromeOS toolchains
 remove third_party/android_sdk
