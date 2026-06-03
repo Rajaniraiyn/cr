@@ -102,8 +102,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: chromium
-          key: chromium-src-${{ env.CR_VERSION }}-v1
-          restore-keys: chromium-src-${{ env.CR_VERSION }}-
+          key: chromium-src-${{ env.CR_VERSION }}-v2
+          restore-keys: chromium-src-${{ env.CR_VERSION }}-v2-
           lookup-only: true
 
       # Everything below is skipped entirely on a cache hit — job takes ~5 s.
@@ -177,7 +177,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: chromium
-          key: chromium-src-${{ env.CR_VERSION }}-v1
+          key: chromium-src-${{ env.CR_VERSION }}-v2
 
       - name: Install build dependencies
         if: steps.build-cache.outputs.cache-hit != 'true'
@@ -235,7 +235,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: chromium
-          key: chromium-src-${{ env.CR_VERSION }}-v1
+          key: chromium-src-${{ env.CR_VERSION }}-v2
 
       - name: Restore build dir cache
         id: build-cache
