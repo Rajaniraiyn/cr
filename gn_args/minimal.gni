@@ -50,9 +50,6 @@ use_thin_lto                 = false
 # ── Rust — required in Chromium 136 (cargo_crate targets use rust_sysroot) ───
 enable_rust                  = true
 
-# ── Perfetto tracing — off (no assertions on this flag) ───────────────────────
-enable_perfetto              = false
-
 # ── Media ────────────────────────────────────────────────────────────────────
 proprietary_codecs           = false
 ffmpeg_branding              = "Chromium"
