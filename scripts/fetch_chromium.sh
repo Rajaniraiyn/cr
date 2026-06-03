@@ -42,7 +42,7 @@ solutions = [
       "src/chrome/test/data/perf/sunspider"     : None,
       "src/third_party/hunspell_dictionaries"   : None,
       "src/third_party/android_tools"           : None,
-      "src/third_party/catapult"                : None,
+      # catapult: keep — referenced by //BUILD.gn:267 (bitmaptools)
     },
     "custom_vars" : {
       "checkout_android"                : False,
