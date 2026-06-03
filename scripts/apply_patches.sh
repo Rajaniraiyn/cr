@@ -10,34 +10,40 @@ PATCHES_DIR="$REPO_ROOT/patches"
 
 UNGOOGLED_VERSION="${UNGOOGLED_VERSION:-124.0.6367.155-1}"
 
-echo "=== Fetching ungoogled-chromium patches ($UNGOOGLED_VERSION) ==="
+# Ungoogled patches partially apply (some succeed, some fail) and can leave
+# the tree in a broken GN state.  Skip them until the core build is confirmed.
+# Set APPLY_UNGOOGLED=1 to re-enable.
+if [ "${APPLY_UNGOOGLED:-0}" = "1" ]; then
+  echo "=== Fetching ungoogled-chromium patches ($UNGOOGLED_VERSION) ==="
 
-UG_DIR="$(mktemp -d)"
-trap 'rm -rf "$UG_DIR"' EXIT
+  UG_DIR="$(mktemp -d)"
+  trap 'rm -rf "$UG_DIR"' EXIT
 
-git clone \
-  --depth=1 \
-  --branch "$UNGOOGLED_VERSION" \
-  https://github.com/ungoogled-software/ungoogled-chromium.git \
-  "$UG_DIR" 2>/dev/null \
-  || git clone --depth=1 \
-       https://github.com/ungoogled-software/ungoogled-chromium.git \
-       "$UG_DIR"
+  git clone \
+    --depth=1 \
+    --branch "$UNGOOGLED_VERSION" \
+    https://github.com/ungoogled-software/ungoogled-chromium.git \
+    "$UG_DIR" 2>/dev/null \
+    || git clone --depth=1 \
+         https://github.com/ungoogled-software/ungoogled-chromium.git \
+         "$UG_DIR"
 
-# ── Apply ungoogled patches ──────────────────────────────────────────────────
-echo "=== Applying ungoogled-chromium patches ==="
-SERIES="$UG_DIR/patches/series"
-if [ -f "$SERIES" ]; then
-  while IFS= read -r patch; do
-    [[ "$patch" =~ ^#.*$ || -z "$patch" ]] && continue
-    pfile="$UG_DIR/patches/$patch"
-    if [ -f "$pfile" ]; then
-      echo "  applying $patch"
-      patch -d "$SRC" -p1 --forward --reject-file=/dev/null < "$pfile" || {
-        echo "  WARN: patch $patch had conflicts — skipping"
-      }
-    fi
-  done < "$SERIES"
+  echo "=== Applying ungoogled-chromium patches ==="
+  SERIES="$UG_DIR/patches/series"
+  if [ -f "$SERIES" ]; then
+    while IFS= read -r patch; do
+      [[ "$patch" =~ ^#.*$ || -z "$patch" ]] && continue
+      pfile="$UG_DIR/patches/$patch"
+      if [ -f "$pfile" ]; then
+        echo "  applying $patch"
+        patch -d "$SRC" -p1 --forward --reject-file=/dev/null < "$pfile" || {
+          echo "  WARN: patch $patch had conflicts — skipping"
+        }
+      fi
+    done < "$SERIES"
+  fi
+else
+  echo "=== Skipping ungoogled-chromium patches (APPLY_UNGOOGLED not set) ==="
 fi
 
 # ── Apply our own cr_api patches ─────────────────────────────────────────────
